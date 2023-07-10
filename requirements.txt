@@ -7,11 +7,11 @@ tqdm
 vocab
 revtok
 Pillow
-torch==1.2.0
-torchvision==0.4.0
-tensorboardX==1.8
-Click<7.2.0
-ai2thor==2.1.0
+torch
+torchvision
+tensorboardX
+Click
+ai2thor
 transformers
 tokenizers
 scipy
@@ -20,7 +20,7 @@ matplotlib
 cython
 nltk
 pillow
-gym==0.15.4
+gym
 tqdm
 pipreqs
 h5py

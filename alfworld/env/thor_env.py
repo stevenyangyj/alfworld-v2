@@ -5,6 +5,7 @@ import glob
 import numpy as np
 from collections import Counter, OrderedDict
 from ai2thor.controller import Controller
+from ai2thor.platform import CloudRendering
 
 import alfworld.gen.constants as constants
 from alfworld.env.tasks import get_task
@@ -13,13 +14,7 @@ from alfworld.gen.utils import game_util
 from alfworld.gen.utils.game_util import get_objects_of_type, get_obj_of_type_closest_to_obj
 
 
-DEFAULT_RENDER_SETTINGS = {'renderImage': True,
-                           'renderDepthImage': False,
-                           'renderClassImage': False,
-                           'renderObjectImage': False,
-                           }
-
-class ThorEnv(Controller):
+class ThorEnv(object):
     '''
     an extension of ai2thor.controller.Controller for ALFRED tasks
     '''
@@ -29,14 +24,23 @@ class ThorEnv(Controller):
                  quality='MediumCloseFitShadows',
                  build_path=constants.BUILD_PATH,
                  save_frames_to_disk=False,
-                 save_frames_path="./",
+                 save_frames_path="/home/yijunyan/Data/PyCode/alfworld-v2/data/videos/",
                  smooth_nav=False):
 
-        super().__init__(quality=quality)
+        self.controller = Controller(
+            quality=quality, 
+            platform=CloudRendering,
+            gridSize=constants.AGENT_STEP_SIZE / constants.RECORD_SMOOTHING_FACTOR,
+            cameraY=constants.CAMERA_HEIGHT_OFFSET,
+            renderDepthImage=constants.RENDER_DEPTH_IMAGE,
+            renderInstanceSegmentation=constants.RENDER_INSTANCE_SEGMENTATION,
+            visibility_distance=constants.VISIBILITY_DISTANCE,
+            makeAgentsVisible=False,
+        )
         self.local_executable_path = build_path
-        self.start(x_display=x_display,
-                   player_screen_height=player_screen_height,
-                   player_screen_width=player_screen_width)
+        # self.start(x_display=x_display,
+        #            player_screen_height=player_screen_height,
+        #            player_screen_width=player_screen_width)
         self.task = None
 
         # internal states
@@ -51,14 +55,7 @@ class ThorEnv(Controller):
 
         print("ThorEnv started.")
 
-    def reset(self, scene_name_or_num,
-              grid_size=constants.AGENT_STEP_SIZE / constants.RECORD_SMOOTHING_FACTOR,
-              camera_y=constants.CAMERA_HEIGHT_OFFSET,
-              render_image=constants.RENDER_IMAGE,
-              render_depth_image=constants.RENDER_DEPTH_IMAGE,
-              render_class_image=constants.RENDER_CLASS_IMAGE,
-              render_object_image=constants.RENDER_OBJECT_IMAGE,
-              visibility_distance=constants.VISIBILITY_DISTANCE):
+    def reset(self, scene_name_or_num):
         '''
         reset scene and task states
         '''
@@ -69,18 +66,7 @@ class ThorEnv(Controller):
         else:
             scene_name = 'FloorPlan%d' % scene_name_or_num
 
-        super().reset(scene_name)
-        event = super().step(dict(
-            action='Initialize',
-            gridSize=grid_size,
-            cameraY=camera_y,
-            renderImage=render_image,
-            renderDepthImage=render_depth_image,
-            renderClassImage=render_class_image,
-            renderObjectImage=render_object_image,
-            visibility_distance=visibility_distance,
-            makeAgentsVisible=False,
-        ))
+        event = self.controller.reset(scene=scene_name)
 
         # reset task if specified
         if self.task is not None:
@@ -103,28 +89,29 @@ class ThorEnv(Controller):
         '''
         restore object locations and states
         '''
-        super().step(dict(
-            action='Initialize',
-            gridSize=constants.AGENT_STEP_SIZE / constants.RECORD_SMOOTHING_FACTOR,
-            cameraY=constants.CAMERA_HEIGHT_OFFSET,
-            renderImage=constants.RENDER_IMAGE,
-            renderDepthImage=constants.RENDER_DEPTH_IMAGE,
-            renderClassImage=constants.RENDER_CLASS_IMAGE,
-            renderObjectImage=constants.RENDER_OBJECT_IMAGE,
-            visibility_distance=constants.VISIBILITY_DISTANCE,
-            makeAgentsVisible=False,
-        ))
+        # super().step(dict(
+        #     action='Initialize',
+        #     gridSize=constants.AGENT_STEP_SIZE / constants.RECORD_SMOOTHING_FACTOR,
+        #     cameraY=constants.CAMERA_HEIGHT_OFFSET,
+        #     renderImage=constants.RENDER_IMAGE,
+        #     renderDepthImage=constants.RENDER_DEPTH_IMAGE,
+        #     renderClassImage=constants.RENDER_CLASS_IMAGE,
+        #     renderObjectImage=constants.RENDER_OBJECT_IMAGE,
+        #     visibility_distance=constants.VISIBILITY_DISTANCE,
+        #     makeAgentsVisible=False,
+        # ))
+        self.controller.reset()
         if len(object_toggles) > 0:
-            super().step((dict(action='SetObjectToggles', objectToggles=object_toggles)))
+            self.controller.step(dict(action='SetObjectToggles', objectToggles=object_toggles))
 
         if dirty_and_empty:
-            super().step(dict(action='SetStateOfAllObjects',
+            self.controller.step(dict(action='SetStateOfAllObjects',
                                StateChange="CanBeDirty",
                                forceAction=True))
-            super().step(dict(action='SetStateOfAllObjects',
+            self.controller.step(dict(action='SetStateOfAllObjects',
                                StateChange="CanBeFilled",
                                forceAction=False))
-        super().step((dict(action='SetObjectPoses', objectPoses=object_poses)))
+        self.controller.step((dict(action='SetObjectPoses', objectPoses=object_poses)))
 
     def set_task(self, traj, args, reward_type='sparse', max_episode_length=2000):
         '''
@@ -135,7 +122,7 @@ class ThorEnv(Controller):
 
     def step(self, action, smooth_nav=False):
         '''
-        overrides ai2thor.controller.Controller.step() for smooth navigation and goal_condition updates
+        Do NOT overrides ai2thor.controller.Controller.step() for smooth navigation and goal_condition updates
         '''
         if smooth_nav or self.smooth_nav:
             if "MoveAhead" in action['action']:
@@ -145,14 +132,14 @@ class ThorEnv(Controller):
             elif "Look" in action['action']:
                 event = self.smooth_look(action)
             else:
-                event = super().step(action)
+                event = self.controller.step(action)
         else:
             if "LookUp" in action['action']:
                 event = self.look_angle(-constants.AGENT_HORIZON_ADJ)
             elif "LookDown" in action['action']:
                 event = self.look_angle(constants.AGENT_HORIZON_ADJ)
             else:
-                event = super().step(action)
+                event = self.controller.step(action)
 
         if self.save_frames_to_disk:
             self.save_frames(event)
@@ -161,18 +148,18 @@ class ThorEnv(Controller):
         return event
 
     def save_frames(self, event):
-        def save_png(e):
+        def save_scene_seg(e):
             if not os.path.exists(self.save_frames_path):
                 os.makedirs(self.save_frames_path)
-            rgb_image = e.frame[:,:,::-1]
+            seg_image = e.instance_segmentation_frame[:,:,::-1]
             img_idx = len(glob.glob(self.save_frames_path + '/*.png'))
-            cv2.imwrite(self.save_frames_path + '/%09d.png' % img_idx, rgb_image)
+            cv2.imwrite(self.save_frames_path + '/%09d.png' % img_idx, seg_image)
 
         if type(event) is list:
             for e in event:
-                save_png(e)
+                save_scene_seg(e)
         else:
-            save_png(event)
+            save_scene_seg(event)
 
     def check_post_conditions(self, action):
         '''
@@ -186,7 +173,7 @@ class ThorEnv(Controller):
         extra updates to metadata after step
         '''
         # add 'cleaned' to all object that were washed in the sink
-        event = self.last_event
+        event = self.controller.last_event
         if event.metadata['lastActionSuccess']:
             # clean
             if action['action'] == 'ToggleObjectOn' and "Faucet" in action['objectId']:
@@ -210,19 +197,19 @@ class ThorEnv(Controller):
         if self.task is None:
             raise Exception("WARNING: no task setup for transition_reward")
         else:
-            return self.task.transition_reward(self.last_event)
+            return self.task.transition_reward(self.controller.last_event)
 
     def get_goal_satisfied(self):
         if self.task is None:
             raise Exception("WARNING: no task setup for goal_satisfied")
         else:
-            return self.task.goal_satisfied(self.last_event)
+            return self.task.goal_satisfied(self.controller.last_event)
 
     def get_goal_conditions_met(self):
         if self.task is None:
             raise Exception("WARNING: no task setup for goal_satisfied")
         else:
-            return self.task.goal_conditions_met(self.last_event)
+            return self.task.goal_conditions_met(self.controller.last_event)
 
     def get_subgoal_idx(self):
         if self.task is None:
@@ -234,30 +221,30 @@ class ThorEnv(Controller):
         '''
         do nothing
         '''
-        super().step(dict(action='Pass'))
+        pass
 
     def smooth_move_ahead(self, action, render_settings=None):
         '''
         smoother MoveAhead
         '''
-        if render_settings is None:
-            render_settings = DEFAULT_RENDER_SETTINGS
+        # if render_settings is None:
+        #     render_settings = DEFAULT_RENDER_SETTINGS
         smoothing_factor = constants.RECORD_SMOOTHING_FACTOR
         new_action = copy.deepcopy(action)
         new_action['moveMagnitude'] = constants.AGENT_STEP_SIZE / smoothing_factor
 
-        new_action['renderImage'] = render_settings['renderImage']
-        new_action['renderClassImage'] = render_settings['renderClassImage']
-        new_action['renderObjectImage'] = render_settings['renderObjectImage']
-        new_action['renderDepthImage'] = render_settings['renderDepthImage']
+        # new_action['renderImage'] = render_settings['renderImage']
+        # new_action['renderClassImage'] = render_settings['renderClassImage']
+        # new_action['renderObjectImage'] = render_settings['renderObjectImage']
+        # new_action['renderDepthImage'] = render_settings['renderDepthImage']
 
         events = []
         for xx in range(smoothing_factor - 1):
-            event = super().step(new_action)
+            event = self.controller.step(new_action)
             if event.metadata['lastActionSuccess']:
                 events.append(event)
 
-        event = super().step(new_action)
+        event = self.controller.step(new_action)
         if event.metadata['lastActionSuccess']:
             events.append(event)
         return events
@@ -266,9 +253,9 @@ class ThorEnv(Controller):
         '''
         smoother RotateLeft and RotateRight
         '''
-        if render_settings is None:
-            render_settings = DEFAULT_RENDER_SETTINGS
-        event = self.last_event
+        # if render_settings is None:
+        #     render_settings = DEFAULT_RENDER_SETTINGS
+        event = self.controller.last_event
         horizon = np.round(event.metadata['agent']['cameraHorizon'], 4)
         position = event.metadata['agent']['position']
         rotation = event.metadata['agent']['rotation']
@@ -280,32 +267,15 @@ class ThorEnv(Controller):
 
         events = []
         for xx in np.arange(.1, 1.0001, .1):
-            if xx < 1:
-                teleport_action = {
-                    'action': 'TeleportFull',
-                    'rotation': np.round(start_rotation * (1 - xx) + end_rotation * xx, 3),
-                    'x': position['x'],
-                    'z': position['z'],
-                    'y': position['y'],
-                    'horizon': horizon,
-                    'tempRenderChange': True,
-                    'renderNormalsImage': False,
-                    'renderImage': render_settings['renderImage'],
-                    'renderClassImage': render_settings['renderClassImage'],
-                    'renderObjectImage': render_settings['renderObjectImage'],
-                    'renderDepthImage': render_settings['renderDepthImage'],
-                }
-                event = super().step(teleport_action)
-            else:
-                teleport_action = {
-                    'action': 'TeleportFull',
-                    'rotation': np.round(start_rotation * (1 - xx) + end_rotation * xx, 3),
-                    'x': position['x'],
-                    'z': position['z'],
-                    'y': position['y'],
-                    'horizon': horizon,
-                }
-                event = super().step(teleport_action)
+            teleport_action = {
+                'action': 'TeleportFull',
+                'rotation': np.round(start_rotation * (1 - xx) + end_rotation * xx, 3),
+                'x': position['x'],
+                'z': position['z'],
+                'y': position['y'],
+                'horizon': horizon,
+            }
+            event = self.controller.step(teleport_action)
 
             if event.metadata['lastActionSuccess']:
                 events.append(event)
@@ -315,9 +285,7 @@ class ThorEnv(Controller):
         '''
         smoother LookUp and LookDown
         '''
-        if render_settings is None:
-            render_settings = DEFAULT_RENDER_SETTINGS
-        event = self.last_event
+        event = self.controller.last_event
         start_horizon = event.metadata['agent']['cameraHorizon']
         rotation = np.round(event.metadata['agent']['rotation']['y'], 4)
         end_horizon = start_horizon + constants.AGENT_HORIZON_ADJ * (1 - 2 * int(action['action'] == 'LookUp'))
@@ -325,32 +293,15 @@ class ThorEnv(Controller):
 
         events = []
         for xx in np.arange(.1, 1.0001, .1):
-            if xx < 1:
-                teleport_action = {
-                    'action': 'TeleportFull',
-                    'rotation': rotation,
-                    'x': position['x'],
-                    'z': position['z'],
-                    'y': position['y'],
-                    'horizon': np.round(start_horizon * (1 - xx) + end_horizon * xx, 3),
-                    'tempRenderChange': True,
-                    'renderNormalsImage': False,
-                    'renderImage': render_settings['renderImage'],
-                    'renderClassImage': render_settings['renderClassImage'],
-                    'renderObjectImage': render_settings['renderObjectImage'],
-                    'renderDepthImage': render_settings['renderDepthImage'],
-                }
-                event = super().step(teleport_action)
-            else:
-                teleport_action = {
-                    'action': 'TeleportFull',
-                    'rotation': rotation,
-                    'x': position['x'],
-                    'z': position['z'],
-                    'y': position['y'],
-                    'horizon': np.round(start_horizon * (1 - xx) + end_horizon * xx, 3),
-                }
-                event = super().step(teleport_action)
+            teleport_action = {
+                'action': 'TeleportFull',
+                'rotation': rotation,
+                'x': position['x'],
+                'z': position['z'],
+                'y': position['y'],
+                'horizon': np.round(start_horizon * (1 - xx) + end_horizon * xx, 3),
+            }
+            event = self.controller.step(teleport_action)
 
             if event.metadata['lastActionSuccess']:
                 events.append(event)
@@ -360,9 +311,7 @@ class ThorEnv(Controller):
         '''
         look at a specific angle
         '''
-        if render_settings is None:
-            render_settings = DEFAULT_RENDER_SETTINGS
-        event = self.last_event
+        event = self.controller.last_event
         start_horizon = event.metadata['agent']['cameraHorizon']
         rotation = np.round(event.metadata['agent']['rotation']['y'], 4)
         end_horizon = start_horizon + angle
@@ -375,23 +324,15 @@ class ThorEnv(Controller):
             'z': position['z'],
             'y': position['y'],
             'horizon': np.round(end_horizon, 3),
-            'tempRenderChange': True,
-            'renderNormalsImage': False,
-            'renderImage': render_settings['renderImage'],
-            'renderClassImage': render_settings['renderClassImage'],
-            'renderObjectImage': render_settings['renderObjectImage'],
-            'renderDepthImage': render_settings['renderDepthImage'],
         }
-        event = super().step(teleport_action)
+        event = self.controller.step(teleport_action)
         return event
 
     def rotate_angle(self, angle, render_settings=None):
         '''
         rotate at a specific angle
         '''
-        if render_settings is None:
-            render_settings = DEFAULT_RENDER_SETTINGS
-        event = self.last_event
+        event = self.controller.last_event
         horizon = np.round(event.metadata['agent']['cameraHorizon'], 4)
         position = event.metadata['agent']['position']
         rotation = event.metadata['agent']['rotation']
@@ -405,14 +346,8 @@ class ThorEnv(Controller):
             'z': position['z'],
             'y': position['y'],
             'horizon': horizon,
-            'tempRenderChange': True,
-            'renderNormalsImage': False,
-            'renderImage': render_settings['renderImage'],
-            'renderClassImage': render_settings['renderClassImage'],
-            'renderObjectImage': render_settings['renderObjectImage'],
-            'renderDepthImage': render_settings['renderDepthImage'],
         }
-        event = super().step(teleport_action)
+        event = self.controller.step(teleport_action)
         return event
 
     def to_thor_api_exec(self, action, object_id="", smooth_nav=False):
@@ -453,7 +388,7 @@ class ThorEnv(Controller):
                           objectId=object_id)
             event = self.step(action)
         elif "PutObject" in action:
-            inventory_object_id = self.last_event.metadata['inventoryObjects'][0]['objectId']
+            inventory_object_id = self.controller.last_event.metadata['inventoryObjects'][0]['objectId']
             action = dict(action="PutObject",
                           objectId=inventory_object_id,
                           receptacleObjectId=object_id,
@@ -471,7 +406,7 @@ class ThorEnv(Controller):
             event = self.step(action)
         elif "SliceObject" in action:
             # check if agent is holding knife in hand
-            inventory_objects = self.last_event.metadata['inventoryObjects']
+            inventory_objects = self.controller.last_event.metadata['inventoryObjects']
             if len(inventory_objects) == 0 or 'Knife' not in inventory_objects[0]['objectType']:
                 raise Exception("Agent should be holding a knife before slicing.")
 
@@ -489,7 +424,7 @@ class ThorEnv(Controller):
         In this case, we need to execute a `CleanAction` in the simulator on every object in the corresponding
         basin. This is to clean everything in the sink rather than just things touching the stream.
         '''
-        event = self.last_event
+        event = self.controller.last_event
         if event.metadata['lastActionSuccess'] and 'Faucet' in object_id:
             # Need to delay one frame to let `isDirty` update on stream-affected.
             event = self.step({'action': 'Pass'})
@@ -505,7 +440,7 @@ class ThorEnv(Controller):
         ignores any object that is not interactable in anyway
         '''
         pruned_instance_ids = []
-        for obj in self.last_event.metadata['objects']:
+        for obj in self.controller.last_event.metadata['objects']:
             obj_id = obj['objectId']
             if obj_id in instances_ids:
                 if obj['pickupable'] or obj['receptacle'] or obj['openable'] or obj['toggleable'] or obj['sliceable']:
@@ -525,8 +460,8 @@ class ThorEnv(Controller):
             raise Exception("NULL mask.")
         elif interact_mask is not None:
             # ground-truth instance segmentation mask from THOR
-            instance_segs = np.array(self.last_event.instance_segmentation_frame)
-            color_to_object_id = self.last_event.color_to_object_id
+            instance_segs = np.array(self.controller.last_event.instance_segmentation_frame)
+            color_to_object_id = self.controller.last_event.color_to_object_id
 
             # get object_id for each 1-pixel in the interact_mask
             nz_rows, nz_cols = np.nonzero(interact_mask)
@@ -546,8 +481,8 @@ class ThorEnv(Controller):
             iou_sorted_instance_ids = list(OrderedDict(sorted(iou_scores.items(), key=lambda x: x[1], reverse=True)))
 
             # get the most common object ids ignoring the object-in-hand
-            inv_obj = self.last_event.metadata['inventoryObjects'][0]['objectId'] \
-                if len(self.last_event.metadata['inventoryObjects']) > 0 else None
+            inv_obj = self.controller.last_event.metadata['inventoryObjects'][0]['objectId'] \
+                if len(self.controller.last_event.metadata['inventoryObjects']) > 0 else None
             all_ids = [color_to_object_id[color_id] for color_id in iou_sorted_instance_ids
                        if color_id in color_to_object_id and color_to_object_id[color_id] != inv_obj]
 
@@ -572,7 +507,7 @@ class ThorEnv(Controller):
 
                 cv2.imshow('seg', instance_segs)
                 cv2.imshow('mask', instance_seg)
-                cv2.imshow('full', self.last_event.frame[:,:,::-1])
+                cv2.imshow('full', self.controller.last_event.frame[:,:,::-1])
                 cv2.waitKey(0)
 
             if len(instance_ids) == 0:
@@ -600,7 +535,7 @@ class ThorEnv(Controller):
                 instance_seg[:, :, :] = interact_mask[:, :, np.newaxis] == 1
                 cv2.imshow('seg', instance_segs)
                 cv2.imshow('mask', instance_seg)
-                cv2.imshow('full', self.last_event.frame[:,:,::-1])
+                cv2.imshow('full', self.controller.last_event.frame[:,:,::-1])
                 cv2.waitKey(0)
                 print(event.metadata['errorMessage'])
             success = False
@@ -620,3 +555,14 @@ class ThorEnv(Controller):
     @staticmethod
     def decompress_mask(compressed_mask):
         return image_util.decompress_mask(compressed_mask)
+
+
+if __name__ == '__main__':
+    import time
+    
+    main_cls = ThorEnv()
+    event = main_cls.reset("FloorPlan20")
+    s = time.time()
+    event = main_cls.step(action=dict(action='MoveAhead'))
+    print(f'Approx FPS: {1 / (time.time() - s):.1f}')
+    main_cls.save_frames(event)
