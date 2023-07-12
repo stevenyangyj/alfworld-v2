@@ -32,7 +32,7 @@ env:
 
 controller:
   type: 'oracle'                                               # 'oracle' or 'oracle_astar' or 'mrcnn' or 'mrcnn_astar' (aka BUTLER)
-  debug: False
+  debug: True
   load_receps: True                                            # load receptacle locations from precomputed dict (if available)
 
 mask_rcnn:

@@ -101,8 +101,12 @@ class ThorEnv(object):
         #     makeAgentsVisible=False,
         # ))
         self.controller.reset()
-        if len(object_toggles) > 0:
-            self.controller.step(dict(action='SetObjectToggles', objectToggles=object_toggles))
+        # if len(object_toggles) > 0:
+        #     object_toggles = object_toggles[0]
+        #     object_toggles['isToggled'] = object_toggles['isOn']
+        #     object_toggles['stateChange'] = 'toggleable'
+        #     object_toggles.pop('isOn')
+        #     _ = self.controller.step(action='SetObjectStates', SetObjectStates=object_toggles, forceAction=True)
 
         if dirty_and_empty:
             self.controller.step(dict(action='SetStateOfAllObjects',
@@ -118,7 +122,7 @@ class ThorEnv(object):
         set the current task type (one of 7 tasks)
         '''
         task_type = traj['task_type']
-        self.task = get_task(task_type, traj, self, args, reward_type=reward_type, max_episode_length=max_episode_length)
+        self.task = get_task(task_type, traj, self.controller, args, reward_type=reward_type, max_episode_length=max_episode_length)
 
     def step(self, action, smooth_nav=False):
         '''
@@ -151,7 +155,7 @@ class ThorEnv(object):
         def save_scene_seg(e):
             if not os.path.exists(self.save_frames_path):
                 os.makedirs(self.save_frames_path)
-            seg_image = e.instance_segmentation_frame[:,:,::-1]
+            seg_image = e.instance_segmentation_frame
             img_idx = len(glob.glob(self.save_frames_path + '/*.png'))
             cv2.imwrite(self.save_frames_path + '/%09d.png' % img_idx, seg_image)
 
@@ -555,14 +559,4 @@ class ThorEnv(object):
     @staticmethod
     def decompress_mask(compressed_mask):
         return image_util.decompress_mask(compressed_mask)
-
-
-if __name__ == '__main__':
-    import time
     
-    main_cls = ThorEnv()
-    event = main_cls.reset("FloorPlan20")
-    s = time.time()
-    event = main_cls.step(action=dict(action='MoveAhead'))
-    print(f'Approx FPS: {1 / (time.time() - s):.1f}')
-    main_cls.save_frames(event)

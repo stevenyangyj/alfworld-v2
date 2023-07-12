@@ -24,9 +24,12 @@ def setup_scene(env, traj_data, r_idx, args, reward_type='dense'):
 
     scene_name = 'FloorPlan%d' % scene_num
     env.reset(scene_name)
-    env.restore_scene(object_poses, object_toggles, dirty_and_empty)
+    # env.restore_scene(object_poses, object_toggles, dirty_and_empty)
 
     # initialize to start position
+    init_action = traj_data['scene']['init_action']
+    init_action.pop('rotateOnTeleport')
+    init_action['standing'] = True
     env.step(dict(traj_data['scene']['init_action']))
 
     # print goal instr
@@ -41,7 +44,9 @@ def main(args):
 
     # start THOR
     env = ThorEnv()
-
+    json_str = json.dumps(env.controller.last_event.metadata, indent=4)
+    with open('test_env.json', 'w') as json_file:
+        json_file.write(json_str)
     # load traj_data
     root = args.problem
     json_file = os.path.join(root, 'traj_data.json')

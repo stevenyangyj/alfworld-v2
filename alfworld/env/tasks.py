@@ -290,9 +290,14 @@ class PickHeatThenPlaceInRecepTask(BaseTask):
             if len([p for p in pickupables if 'Sliced' in p['objectId']]) >= 1:
                 s += 1
 
+        heated_objects = []
+        for obj_data_i in self.env.last_event.metadata["objects"]:
+            if obj_data_i['temperature'] == "Hot":
+                heated_objects.append(obj_data_i['objectId'])
+        
         objs_in_place = [p['objectId'] for p in pickupables for r in receptacles
                          if r['receptacleObjectIds'] is not None and p['objectId'] in r['receptacleObjectIds']]
-        objs_heated = [p['objectId'] for p in pickupables if p['objectId'] in self.env.heated_objects]
+        objs_heated = [p['objectId'] for p in pickupables if p['objectId'] in heated_objects]
 
         # check if object is in the receptacle
         if len(objs_in_place) > 0:
@@ -335,10 +340,15 @@ class PickCoolThenPlaceInRecepTask(BaseTask):
             ts += 1
             if len([p for p in pickupables if 'Sliced' in p['objectId']]) >= 1:
                 s += 1
+                
+        cooled_objects = []
+        for obj_data_i in self.env.last_event.metadata["objects"]:
+            if obj_data_i['temperature'] == "Cold":
+                cooled_objects.append(obj_data_i['objectId'])
 
         objs_in_place = [p['objectId'] for p in pickupables for r in receptacles
                          if r['receptacleObjectIds'] is not None and p['objectId'] in r['receptacleObjectIds']]
-        objs_cooled = [p['objectId'] for p in pickupables if p['objectId'] in self.env.cooled_objects]
+        objs_cooled = [p['objectId'] for p in pickupables if p['objectId'] in cooled_objects]
 
         # check if object is in the receptacle
         if len(objs_in_place) > 0:
@@ -381,10 +391,15 @@ class PickCleanThenPlaceInRecepTask(BaseTask):
             ts += 1
             if len([p for p in pickupables if 'Sliced' in p['objectId']]) >= 1:
                 s += 1
+                
+        cleaned_objects = []
+        for obj_data_i in self.env.last_event.metadata["objects"]:
+            if not obj_data_i['isDirty']:
+                cleaned_objects.append(obj_data_i['objectId'])
 
         objs_in_place = [p['objectId'] for p in pickupables for r in receptacles
                          if r['receptacleObjectIds'] is not None and p['objectId'] in r['receptacleObjectIds']]
-        objs_cleaned = [p['objectId'] for p in pickupables if p['objectId'] in self.env.cleaned_objects]
+        objs_cleaned = [p['objectId'] for p in pickupables if p['objectId'] in cleaned_objects]
 
         # check if object is in the receptacle
         if len(objs_in_place) > 0:

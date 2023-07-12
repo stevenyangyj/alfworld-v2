@@ -36,36 +36,36 @@ class OracleAgent(BaseAgent):
         return openable_points
 
     def get_obj_cls_from_metadata(self, name):
-        objs = [obj for obj in self.env.last_event.metadata['objects'] if obj['visible'] and name in obj['objectType']]
+        objs = [obj for obj in self.env.controller.last_event.metadata['objects'] if obj['visible'] and name in obj['objectType']]
         return objs[0] if len(objs) > 0 else None
 
     def get_obj_id_from_metadata(self, object_id):
-        objs = [obj for obj in self.env.last_event.metadata['objects'] if object_id == obj['objectId']]
+        objs = [obj for obj in self.env.controller.last_event.metadata['objects'] if object_id == obj['objectId']]
         return objs[0] if len(objs) > 0 else None
 
     def get_num_interactable_objs(self, recep_id):
-        return len([obj for obj in self.env.last_event.metadata['objects'] if obj['visible'] and obj['parentReceptacles'] and recep_id in obj['parentReceptacles']])
+        return len([obj for obj in self.env.controller.last_event.metadata['objects'] if obj['visible'] and obj['parentReceptacles'] and recep_id in obj['parentReceptacles']])
 
     def get_exploration_frames(self):
         return self.exploration_frames
 
     # use pre-computed openable points from ALFRED to store receptacle locations
     def explore_scene(self):
-        agent_height = self.env.last_event.metadata['agent']['position']['y']
+        agent_height = self.env.controller.last_event.metadata['agent']['position']['y']
         for object_id, point in self.openable_points.items():
             action = {'action': 'TeleportFull',
                       'x': point[0],
                       'y': agent_height,
                       'z': point[1],
-                      'rotateOnTeleport': False,
                       'rotation': point[2],
-                      'horizon': point[3]}
+                      'horizon': point[3],
+                      'standing': True}
             event = self.env.step(action)
 
             if event.metadata['lastActionSuccess']:
-                self.exploration_frames.append(np.array(self.env.last_event.frame[:,:,::-1]))
-                instance_segs = np.array(self.env.last_event.instance_segmentation_frame)
-                color_to_object_id = self.env.last_event.color_to_object_id
+                self.exploration_frames.append(self.env.controller.last_event.frame)
+                instance_segs = self.env.controller.last_event.instance_segmentation_frame
+                color_to_object_id = self.env.controller.last_event.color_to_object_id
 
                 # find unique instance segs
                 color_count = Counter()
@@ -99,8 +99,8 @@ class OracleAgent(BaseAgent):
 
     # ground-truth instance segemetations (with consistent object IDs) from THOR
     def get_instance_seg(self):
-        instance_segs = np.array(self.env.last_event.instance_segmentation_frame)
-        inst_color_to_object_id = self.env.last_event.color_to_object_id
+        instance_segs = self.env.controller.last_event.instance_segmentation_frame
+        inst_color_to_object_id = self.env.controller.last_event.color_to_object_id
 
         # find unique instance segs
         inst_color_count = Counter()
@@ -165,9 +165,9 @@ class OracleAgent(BaseAgent):
         event = None
         self.feedback = "Nothing happens."
 
-        try:
-            cmd = self.parse_command(action_str)
+        cmd = self.parse_command(action_str)
 
+        try:
             if cmd['action'] == self.Action.GOTO:
                 target = cmd['tar']
                 recep = self.get_object(target, self.receptacles)
@@ -200,9 +200,8 @@ class OracleAgent(BaseAgent):
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
                 recep = self.get_object(tar, self.receptacles)
                 event = self.env.step({'action': "PutObject",
-                                       'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
-                                       'receptacleObjectId': recep['object_id'],
-                                       'forceAction': True})
+                                        'objectId': self.env.controller.last_event.metadata['inventoryObjects'][0]['objectId'],
+                                        'forceAction': True})
                 if event.metadata['lastActionSuccess']:
                     self.inventory.pop()
                     self.feedback = "You put the %s %s the %s." % (obj, rel, tar)
@@ -238,13 +237,13 @@ class OracleAgent(BaseAgent):
 
             elif cmd['action'] == self.Action.HEAT:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
-                obj_id = self.env.last_event.metadata['inventoryObjects'][0]['objectId']
+                obj_id = self.env.controller.last_event.metadata['inventoryObjects'][0]['objectId']
                 recep = self.get_object(tar, self.receptacles)
 
                 # open the microwave, heat the object, take the object, close the microwave
                 events = []
                 events.append(self.env.step({'action': 'OpenObject', 'objectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PutObject', 'objectId': obj_id, 'receptacleObjectId': recep['object_id'], 'forceAction': True}))
+                events.append(self.env.step({'action': 'PutObject', 'objectId': obj_id, 'forceAction': True}))
                 events.append(self.env.step({'action': 'CloseObject', 'objectId': recep['object_id'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'ToggleObjectOn', 'objectId': recep['object_id'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'Pass'}))
@@ -258,13 +257,13 @@ class OracleAgent(BaseAgent):
 
             elif cmd['action'] == self.Action.CLEAN:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
-                object = self.env.last_event.metadata['inventoryObjects'][0]
-                sink = self.get_obj_cls_from_metadata('BathtubBasin' if "bathtubbasin" in tar else "SinkBasin")
+                object = self.env.controller.last_event.metadata['inventoryObjects'][0]
+                # sink = self.get_obj_cls_from_metadata('BathtubBasin' if "bathtubbasin" in tar else "SinkBasin")
                 faucet = self.get_obj_cls_from_metadata('Faucet')
 
                 # put the object in the sink, turn on the faucet, turn off the faucet, pickup the object
                 events = []
-                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': sink['objectId'], 'forceAction': True}))
+                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'ToggleObjectOn', 'objectId': faucet['objectId'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'Pass'}))
                 events.append(self.env.step({'action': 'ToggleObjectOff', 'objectId': faucet['objectId'], 'forceAction': True}))
@@ -275,13 +274,13 @@ class OracleAgent(BaseAgent):
 
             elif cmd['action'] == self.Action.COOL:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
-                object = self.env.last_event.metadata['inventoryObjects'][0]
+                object = self.env.controller.last_event.metadata['inventoryObjects'][0]
                 fridge = self.get_obj_cls_from_metadata('Fridge')
 
                 # open the fridge, put the object inside, close the fridge, open the fridge, pickup the object
                 events = []
                 events.append(self.env.step({'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': fridge['objectId'], 'forceAction': True}))
+                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'CloseObject', 'objectId': fridge['objectId'], 'forceAction': True}))
                 events.append(self.env.step({'action': 'Pass'}))
                 events.append(self.env.step({'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}))
@@ -294,10 +293,10 @@ class OracleAgent(BaseAgent):
             elif cmd['action'] == self.Action.SLICE:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
                 object = self.get_object(obj, self.objects)
-                inventory_objects = self.env.last_event.metadata['inventoryObjects']
+                inventory_objects = self.env.controller.last_event.metadata['inventoryObjects']
                 if 'Knife' in inventory_objects[0]['objectType']:
                     event = self.env.step({'action': "SliceObject",
-                                           'objectId': object['object_id']})
+                                            'objectId': object['object_id']})
                 self.feedback = "You slice %s with the %s" % (obj, tar)
 
             elif cmd['action'] == self.Action.INVENTORY:
@@ -326,6 +325,7 @@ class OracleAgent(BaseAgent):
         except:
             if self.debug:
                 print(traceback.format_exc())
+                breakpoint()
 
         if event and not event.metadata['lastActionSuccess']:
             self.feedback = "Nothing happens."

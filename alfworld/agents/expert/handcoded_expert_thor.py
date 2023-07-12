@@ -14,7 +14,7 @@ class PickAndPlaceSimpleThorPolicy(PickAndPlaceSimplePolicy):
     def get_predicates(self, game_state, obj, parent):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         self.is_agent_holding_right_object = any(obj in o for o in self.inventory)
         obs_at_curr_recep = self.obs_at_recep[self.curr_recep] if self.curr_recep in self.obs_at_recep else ""
@@ -34,7 +34,7 @@ class PickTwoObjAndPlaceThorPolicy(PickTwoObjAndPlacePolicy):
     def get_predicates(self, game_state, obj, parent):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         relevant_receptacles = [r.split("|")[0].lower() for o in metadata['objects'] if o['objectType'].lower() in obj and o['parentReceptacles'] for r in o['parentReceptacles'] if r is not None]
         is_one_object_already_inside_receptacle = any(parent in r for r in relevant_receptacles)
@@ -57,7 +57,7 @@ class LookAtObjInLightThorPolicy(LookAtObjInLightPolicy):
     def get_predicates(self, game_state, obj, toggle):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         self.is_agent_holding_right_object = any(obj in o for o in self.inventory)
         obs_at_curr_recep = self.obs_at_recep[self.curr_recep] if self.curr_recep in self.obs_at_recep else ""
@@ -76,7 +76,7 @@ class PickHeatThenPlaceInRecepThorPolicy(PickHeatThenPlaceInRecepPolicy):
     def get_predicates(self, game_state, obj, parent):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         self.is_agent_holding_right_object = any(obj in o for o in self.inventory)
         hot_objects = [o.split("|")[0].lower() for o in list(self.env.heated_objects) if o in [io['objectId'] for io in metadata['inventoryObjects']]]
@@ -99,7 +99,7 @@ class PickCoolThenPlaceInRecepThorPolicy(PickCoolThenPlaceInRecepPolicy):
     def get_predicates(self, game_state, obj, parent):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         self.is_agent_holding_right_object = any(obj in o for o in self.inventory)
         cool_objects = [o.split("|")[0].lower() for o in list(self.env.cooled_objects) if o in [io['objectId'] for io in metadata['inventoryObjects']]]
@@ -122,7 +122,7 @@ class PickCleanThenPlaceInRecepThorPolicy(PickCleanThenPlaceInRecepPolicy):
     def get_predicates(self, game_state, obj, parent):
         admissible_commands = game_state['admissible_commands']
         admissible_commands_wo_num_ids = [self.remove_num_ids(ac) for ac in admissible_commands]
-        metadata = self.env.last_event.metadata
+        metadata = self.env.controller.last_event.metadata
 
         self.is_agent_holding_right_object = any(obj in o for o in self.inventory)
         clean_objects = [o.split("|")[0].lower() for o in list(self.env.cleaned_objects) if o in [io['objectId'] for io in metadata['inventoryObjects']]]

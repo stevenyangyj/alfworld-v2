@@ -31,25 +31,23 @@ class AlfredThorEnv(object):
     Interface for Embodied (THOR) environment
     '''
 
-    class Thor(threading.Thread):
-        def __init__(self, queue, train_eval="train"):
-            Thread.__init__(self)
-            self.action_queue = queue
+    class Thor(object):
+        def __init__(self, train_eval="train"):
             self.mask_rcnn = None
             self.env =  None
             self.train_eval = train_eval
             self.controller_type = "oracle"
 
-        def run(self):
-            while True:
-                action, reset, task_file = self.action_queue.get()
-                try:
-                    if reset:
-                        self.reset(task_file)
-                    else:
-                        self.step(action)
-                finally:
-                    self.action_queue.task_done()
+        # def run(self):
+        #     while True:
+        #         action, reset, task_file = self.action_queue.get()
+        #         try:
+        #             if reset:
+        #                 self.reset(task_file)
+        #             else:
+        #                 self.step(action)
+        #         finally:
+        #             self.action_queue.task_done()
 
         def init_env(self, config):
             self.config = config
@@ -97,14 +95,18 @@ class AlfredThorEnv(object):
             object_toggles = self.traj_data['scene']['object_toggles']
             scene_name = 'FloorPlan%d' % scene_num
             self.env.reset(scene_name)
-            self.env.restore_scene(object_poses, object_toggles, dirty_and_empty)
-
+            # self.env.restore_scene(object_poses, object_toggles, dirty_and_empty)
+            # breakpoint()
+            
             # recording
             save_frames_path = self.config['env']['thor']['save_frames_path']
             self.env.save_frames_path = os.path.join(save_frames_path, self.traj_root.replace('../', ''))
 
             # initialize to start position
-            self.env.step(dict(self.traj_data['scene']['init_action']))            # print goal instr
+            init_action = self.traj_data['scene']['init_action']
+            init_action.pop('rotateOnTeleport')
+            init_action['standing'] = True
+            self.env.step(dict(init_action))            # print goal instr
             task_desc = get_templated_task_desc(self.traj_data)
             print("Task: %s" % task_desc)
             # print("Task: %s" % (self.traj_data['turk_annotations']['anns'][0]['task_desc']))
@@ -162,8 +164,8 @@ class AlfredThorEnv(object):
                 self.prev_command = str(action)
                 self._feedback = self.controller.step(action)
                 self._res = self.get_info()
-                if self.env.save_frames_to_disk:
-                    self.record_action(action)
+                # if self.env.save_frames_to_disk:
+                #     self.record_action(action)
             self.steps += 1
 
         def get_results(self):
@@ -214,7 +216,7 @@ class AlfredThorEnv(object):
             return (self._feedback, self._done, acs, won, goal_condition_success_rate, expert_actions)
 
         def get_last_frame(self):
-            return self.env.last_event.frame[:,:,::-1]
+            return self.env.controller.last_event.frame
 
         def get_exploration_frames(self):
             return self.controller.get_exploration_frames()
@@ -303,13 +305,9 @@ class AlfredThorEnv(object):
         self.action_queues = []
         self.task_order = [""] * self.batch_size
         for n in range(self.batch_size):
-            queue = Queue()
-            env = self.Thor(queue, self.train_eval)
-            self.action_queues.append(queue)
-            self.envs.append(env)
-            env.daemon = True
-            env.start()
+            env = self.Thor(self.train_eval)
             env.init_env(self.config)
+            self.envs.append(env)
         return self
 
     def reset(self):
@@ -327,7 +325,7 @@ class AlfredThorEnv(object):
                 self.get_env_paths()
 
         for n in range(batch_size):
-            self.action_queues[n].put((None, True, tasks[n]))
+            self.envs[n].reset(tasks[n])
 
         obs, dones, infos = self.wait_and_get_info()
         return obs, infos
@@ -339,7 +337,7 @@ class AlfredThorEnv(object):
 
         batch_size = self.batch_size
         for n in range(batch_size):
-            self.action_queues[n].put((actions[n], False, ""))
+            self.envs[n].step(actions[n])
 
         obs, dones, infos = self.wait_and_get_info()
         return obs, None, dones, infos
@@ -349,7 +347,6 @@ class AlfredThorEnv(object):
 
         # wait for all threads
         for n in range(self.batch_size):
-            self.action_queues[n].join()
             feedback, done, acs, won, gc_sr, expert_actions = self.envs[n].get_results()
             obs.append(feedback)
             dones.append(done)
